@@ -1,0 +1,26 @@
+fixture,row_number,source_record_id,expected_status,expected_rule_codes,description
+valid_events.csv,2,SRC-1001,ACCEPTED,,Clean receipt in kg
+valid_events.csv,3,SRC-1002,ACCEPTED,,Alias material name and pounds
+valid_events.csv,4,SRC-1003,ACCEPTED,,Timestamp with +02:00 offset converted to UTC
+valid_events.csv,5,SRC-1004,ACCEPTED,,Shipment of recycled resin
+valid_events.csv,6,SRC-1005,ACCEPTED,,Loss without batch_id (optional)
+valid_events.csv,7,SRC-1006,ACCEPTED,,Negative inventory adjustment is allowed
+valid_events.csv,8,SRC-1007,ACCEPTED,,Thousands separator and lbs alias
+valid_events.csv,9,SRC-1008,ACCEPTED,,Extra whitespace and lower-case event type
+valid_events.csv,10,SRC-1009,ACCEPTED,,Zero quantity is a boundary value and is valid
+valid_events.csv,11,SRC-1010,ACCEPTED,,Unit spelled out as kilogram
+invalid_events.csv,2,SRC-2001,QUARANTINED,VAL-001,Missing quantity
+invalid_events.csv,3,SRC-2002,QUARANTINED,VAL-004,Unsupported unit (tons)
+invalid_events.csv,4,SRC-2003,ACCEPTED,,First copy of a duplicated row
+invalid_events.csv,5,SRC-2003,DUPLICATE,VAL-007,Exact duplicate of the previous row
+invalid_events.csv,6,SRC-2004,FLAGGED,VAL-003,Negative shipment quantity
+invalid_events.csv,7,SRC-2005,QUARANTINED,VAL-002,Quantity is not a number
+invalid_events.csv,8,SRC-2006,QUARANTINED,VAL-005,Impossible date
+invalid_events.csv,9,SRC-2007,QUARANTINED,VAL-005,Timestamp without timezone
+invalid_events.csv,10,SRC-2008,QUARANTINED,VAL-006,Unknown event type
+invalid_events.csv,11,SRC-2009,FLAGGED,VAL-008,Unknown material name
+invalid_events.csv,12,SRC-2010,QUARANTINED,VAL-001,Missing facility_id
+invalid_events.csv,13,,QUARANTINED,VAL-001,Missing source_record_id
+invalid_events.csv,14,SRC-2011,QUARANTINED,VAL-001,Row has an extra cell
+invalid_events.csv,15,SRC-2012,ACCEPTED,,First version of a conflicting record
+invalid_events.csv,16,SRC-2012,FLAGGED,VAL-009,Same source key with a different quantity
