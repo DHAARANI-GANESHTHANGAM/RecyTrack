@@ -10,9 +10,9 @@ RecyTrack imports recycling-operation records, standardizes and validates them, 
 
 | Milestone | Scope | State |
 |---|---|---|
-| M1 Data contract | Event schema, clean and corrupted CSV fixtures, labeled expected outcomes | ✅ done |
-| M2 Ingestion | CSV reader, run ID, immutable raw records, run summary | ✅ done |
-| M3 Validation | Normalization, VAL-001…009, quarantine/flag, idempotent re-import | ✅ done (in-memory store) |
+| M1 Data contract | Event schema, clean and corrupted CSV fixtures, labeled expected outcomes | ✔️ done |
+| M2 Ingestion | CSV reader, run ID, immutable raw records, run summary | ✔️done |
+| M3 Validation | Normalization, VAL-001…009, quarantine/flag, idempotent re-import |✔️ done (in-memory store) |
 | M4 Database + API | PostgreSQL tables, FastAPI endpoints, Docker Compose | next |
 | M5 Reconciliation | Material-flow balance with tolerance and NEEDS_DATA | planned |
 | M6 Dashboard | React views for runs, exceptions, metrics, reconciliation | planned |
