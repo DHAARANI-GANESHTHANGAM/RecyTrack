@@ -1,3 +1,6 @@
-# Core pipeline uses only the Python standard library.
-# FastAPI, SQLAlchemy and psycopg will be added in milestone M4.
-pytest==8.3.3
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+python-multipart==0.0.19
+pydantic==2.14.0
