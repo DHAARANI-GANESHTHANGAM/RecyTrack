@@ -47,3 +47,17 @@ Every input row is stored as a read-only `RawRecord`, whatever happens to it lat
 ## Ingestion run
 
 `run_id`, `source_name`, `started_at`, `finished_at`, `status` (`RUNNING` / `SUCCEEDED` / `FAILED`), `received`, `accepted`, `quarantined`, `flagged` and `duplicates` counts, derived rates, and `error_summary`.
+
+## Database tables (PostgreSQL)
+
+Defined in `backend/app/database/tables.py`. Tables are created on startup.
+
+| Table | Contents |
+|---|---|
+| `ingestion_runs` | One row per import: file name, start/finish time, status, counts, error summary |
+| `raw_records` | Every input row as received (JSONB payload), its hash, row number and run. Insert-only. |
+| `material_events` | One normalized event per non-duplicate row, with `validation_status`. Unique on `(source_name, source_record_id, payload_hash)`. |
+| `validation_issues` | Rule code, field, message, severity, raw value and `review_status` for each problem |
+| `audit_events` | Append-only log of review decisions: actor label, details, timestamp |
+
+Duplicate rows have a `raw_records` entry, so the row stays traceable, but no new `material_events` entry.

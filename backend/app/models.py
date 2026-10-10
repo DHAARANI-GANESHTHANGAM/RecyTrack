@@ -90,6 +90,7 @@ class NormalizedEvent:
 @dataclass
 class IngestionRun:
     source_name: str
+    file_name: str | None = None
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     started_at: datetime = field(default_factory=utc_now)
     finished_at: datetime | None = None
@@ -110,6 +111,7 @@ class IngestionRun:
         return {
             "run_id": self.run_id,
             "source_name": self.source_name,
+            "file_name": self.file_name,
             "status": self.status.value,
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,

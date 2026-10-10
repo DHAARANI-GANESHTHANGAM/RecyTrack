@@ -7,6 +7,20 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: recytrack
+          POSTGRES_PASSWORD: recytrack
+          POSTGRES_DB: recytrack_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recytrack"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -15,5 +29,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - run: pytest -q
+      - run: pip install -r requirements-dev.txt
+      - name: Tests (SQLite)
+        run: pytest -q
+      - name: API tests (PostgreSQL)
+        run: pytest -q tests/test_api.py
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://recytrack:recytrack@localhost:5432/recytrack_test
