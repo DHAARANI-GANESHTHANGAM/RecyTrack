@@ -1,4 +1,4 @@
-# Local demo stack: PostgreSQL + RecyTrack API + dashboard.
+# Local demo stack: PostgreSQL + simulated source + RecyTrack API + dashboard.
 #   cp .env.example .env      (then change the password)
 #   docker compose up --build
 # Dashboard: http://localhost:5173    API docs: http://localhost:8000/docs
@@ -19,20 +19,49 @@ services:
       timeout: 3s
       retries: 10
 
+  # Simulated external event API (synthetic data). Fault injection for testing:
+  #   SIM_FAILURE_MODE=flaky docker compose up simulator     (none | always_500 | flaky | slow)
+  simulator:
+    build: ./backend
+    command: ["uvicorn", "simulator.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      SIM_FAILURE_MODE: ${SIM_FAILURE_MODE:-none}
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   api:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-recytrack}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-recytrack}
+      SIMULATED_SOURCE_URL: http://simulator:8001
+      LOG_FORMAT: json
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       db:
         condition: service_healthy
+      # Not a hard dependency: the API starts without the simulator and reports a clear error on import.
+      simulator:
+        condition: service_started
     ports:
       - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   web:
     build: ./frontend
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "127.0.0.1:5173:80"
 

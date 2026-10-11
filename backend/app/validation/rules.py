@@ -112,12 +112,16 @@ def check_material_alias(raw: RawRecord, event: NormalizedEvent) -> list[Validat
 
 
 def check_row_shape(raw: RawRecord, event: NormalizedEvent) -> list[ValidationIssue]:
-    """Rows with extra or missing cells are structurally suspect (part of VAL-001)."""
+    """Rows with extra or missing cells, and API items with unknown fields, are structurally suspect (part of VAL-001)."""
     issues = []
     if "_extra_cells" in raw.payload:
         issues.append(ValidationIssue("VAL-001", None, "Row has more cells than the header.", Severity.ERROR, raw.payload["_extra_cells"]))
     if "_short_row" in raw.payload:
         issues.append(ValidationIssue("VAL-001", None, "Row has fewer cells than the header.", Severity.ERROR, raw.payload["_short_row"]))
+    if "_extra_fields" in raw.payload:  # API items with keys outside the contract
+        issues.append(
+            ValidationIssue("VAL-001", None, "Item has fields that are not in the contract.", Severity.ERROR, raw.payload["_extra_fields"])
+        )
     return issues
 
 

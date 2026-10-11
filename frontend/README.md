@@ -33,8 +33,8 @@ src/
   styles.css              all styles, plain CSS with variables
   services/api.ts         typed fetch client; types mirror backend/app/schemas.py
   hooks/                  useApi (loading/error/data + reload), useUrlFilters (filters in the query string)
-  components/             StatusBadge, StatTile, DataTable, Pagination, FilterBar, ErrorBanner, EmptyState, Loading
-  pages/                  Overview, Ingestion, Records, Exceptions, ExceptionDetail, Reconciliations, ReconciliationDetail
+  components/             StatusBadge, StatTile, DataTable, Pagination, FilterBar, ErrorBanner, EmptyState, Loading, RunSummary
+  pages/                  Overview, Ingestion, Records, Exceptions, ExceptionDetail, Reconciliations, ReconciliationDetail, SourceHealth
   utils/format.ts         decimal-string and UTC formatting, query strings
   utils/reviewer.ts       remembers the reviewer name in localStorage
   __tests__/              Vitest + React Testing Library (fetch is mocked)

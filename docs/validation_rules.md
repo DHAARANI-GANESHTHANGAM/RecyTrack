@@ -11,7 +11,7 @@ No record is ever deleted or auto-corrected. The raw row is always kept.
 
 | Rule | Check | Severity | Status | Where |
 |---|---|---|---|---|
-| VAL-001 | Required field missing or blank (one issue per field). Row has more or fewer cells than the header. | ERROR | implemented | `validation/rules.py` |
+| VAL-001 | Required field missing or blank (one issue per field). Row has more or fewer cells than the header, or an API item has fields outside the contract. | ERROR | implemented | `validation/rules.py` |
 | VAL-002 | Quantity is not a finite decimal | ERROR | implemented | `validation/rules.py` |
 | VAL-003 | Negative quantity on an event type other than `INVENTORY_ADJUSTMENT` | WARNING | implemented | `validation/rules.py` |
 | VAL-004 | Unit not in the supported list | ERROR | implemented | `validation/rules.py` |
@@ -20,7 +20,7 @@ No record is ever deleted or auto-corrected. The raw row is always kept.
 | VAL-007 | Same `(source_name, source_record_id)` with identical payload already imported | WARNING | implemented | `pipeline.py` |
 | VAL-008 | Material name has no known alias | WARNING | implemented | `validation/rules.py` |
 | VAL-009 | Same stable key already imported with **different** values; both kept | WARNING | implemented (same-source only) | `pipeline.py` |
-| VAL-010 | Source stale beyond its freshness window | WARNING | planned (with the simulated API source) | |
+| VAL-010 | Source stale: no successful import within its freshness window (see below) | WARNING | implemented | `validation/freshness.py` |
 | REC-001 | Material-flow balance per facility, material and period (formula below) | — | implemented | `reconciliation/engine.py` |
 | REC-002 | Variance compared with tolerance: `WITHIN_TOLERANCE` or `NEEDS_REVIEW` | — | implemented | `reconciliation/engine.py` |
 | REC-003 | Missing or conflicting counts, or unresolved exceptions → `NEEDS_DATA` | — | implemented | `reconciliation/engine.py` |
@@ -34,6 +34,25 @@ No record is ever deleted or auto-corrected. The raw row is always kept.
 - **Duplicate key:** `(source_name, source_record_id)`. Rows without a `source_record_id` are quarantined (VAL-001) and cannot be de-duplicated.
 - **Reconciliation tolerance:** `RECONCILIATION_TOLERANCE = {"absolute_kg": 5, "percent_of_throughput": 1.0}`. A request can override both.
 - All thresholds and tables live in `backend/app/config.py`. They are illustrative until validated against domain evidence.
+
+## Source freshness (VAL-010)
+
+`GET /api/v1/sources/health` checks each source from the `ingestion_runs` table. Windows are set in
+`SOURCE_FRESHNESS_HOURS` in `backend/app/config.py`: `{"csv": 168, "simulated_api": 24}` (illustrative, SRS §16).
+
+| Status | When |
+|---|---|
+| `FRESH` | The last successful import finished at most `window` hours ago. Exactly at the window is still fresh. |
+| `STALE` | The last successful import is older than the window (VAL-010). |
+| `NEVER_SUCCEEDED` | The source has no successful run (no runs at all, or only failed ones). |
+| `NO_WINDOW` | A source seen in runs that has no configured window; its age is shown but not judged. |
+
+- Every configured source is listed, plus any other `source_name` found in runs.
+- Age is measured from the last **successful** run's `finished_at`. A failed run does not reset it: a source whose latest
+  run failed but whose last success is inside the window stays `FRESH`, and the message says when the latest run failed.
+- The message is actionable, e.g. `No successful import in 30.5 h; window is 24 h.`
+- `GET /api/v1/metrics/quality` returns `sources_stale`, the number of `STALE` sources. `NEVER_SUCCEEDED` is not
+  counted, so an empty install does not show stale sources.
 
 ## Review decisions
 

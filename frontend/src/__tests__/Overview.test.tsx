@@ -105,4 +105,18 @@ describe("Overview", () => {
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(await screen.findByText("API degraded, database unavailable")).toBeInTheDocument();
   });
+
+  it("shows the stale sources tile with a link to Source health", async () => {
+    mockFetch({
+      "GET /api/v1/metrics/quality": () => ({ ...METRICS, sources_stale: 1 }),
+      "GET /api/v1/ingestion/runs": () => ({ ...EMPTY_PAGE, items: [RUN], total: 1 }),
+      "GET /api/v1/reconciliations": () => EMPTY_PAGE,
+      "GET /health": () => ({ status: "ok", database: "ok" }),
+    });
+    renderAt("/", "/", <Overview />);
+    await screen.findByText("Data quality (all runs)");
+    const stale = tile("Stale sources");
+    expect(within(stale).getByText("1")).toBeInTheDocument();
+    expect(within(stale).getByRole("link", { name: "Source health" })).toHaveAttribute("href", "/sources");
+  });
 });

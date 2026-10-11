@@ -138,6 +138,8 @@ export interface QualityMetrics {
   duplicate_rate: number | null;
   open_exceptions: number;
   issues_by_rule: Record<string, number>;
+  /** Sources whose last successful import is outside their freshness window (VAL-010). */
+  sources_stale: number;
 }
 
 export interface ReconciliationIn {
@@ -199,6 +201,21 @@ export interface Meta {
   review_statuses: string[];
   reconciliation_statuses: string[];
   default_tolerance: { absolute_kg: DecimalString; percent_of_throughput: DecimalString };
+}
+
+/** FRESH, STALE (VAL-010), NEVER_SUCCEEDED, or NO_WINDOW for a source with no configured window. */
+export type FreshnessStatus = "FRESH" | "STALE" | "NEVER_SUCCEEDED" | "NO_WINDOW";
+
+export interface SourceHealth {
+  source_name: string;
+  last_run_at: UtcIso | null;
+  last_run_status: RunStatus | string | null;
+  last_success_at: UtcIso | null;
+  /** Hours since the last successful import. */
+  age_hours: number | null;
+  freshness_window_hours: number | null;
+  status: FreshnessStatus | string;
+  message: string;
 }
 
 export interface Health {
@@ -296,6 +313,11 @@ export const api = {
     form.append("file", file);
     return request<Run>(`${BASE}/ingestion/csv`, { method: "POST", body: form });
   },
+
+  /** Import from the simulated API source. A 502 carries {detail: {message, run}} with the FAILED run. */
+  importSimulatedApi: (since?: UtcIso) =>
+    postJson<Run>(`${BASE}/ingestion/simulated-api`, since ? { since } : {}),
+  sourcesHealth: () => request<SourceHealth[]>(`${BASE}/sources/health`),
 
   listRecords: (filters: Filters = {}) => request<Page<MaterialEvent>>(`${BASE}/records${buildQuery(filters)}`),
   listExceptions: (filters: Filters = {}) =>

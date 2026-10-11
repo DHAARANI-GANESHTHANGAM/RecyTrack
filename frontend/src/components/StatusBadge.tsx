@@ -16,6 +16,10 @@ const TONES: Record<string, string> = {
   RUNNING: "grey",
   DUPLICATE: "bluegrey",
   OPEN: "outline",
+  FRESH: "green",
+  STALE: "amber",
+  NEVER_SUCCEEDED: "grey",
+  NO_WINDOW: "grey",
 };
 
 export function StatusBadge({ status }: { status: string | null | undefined }) {

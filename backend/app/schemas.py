@@ -145,6 +145,7 @@ class QualityMetrics(BaseModel):
     duplicate_rate: float | None
     open_exceptions: int
     issues_by_rule: dict[str, int]
+    sources_stale: int = Field(description="Sources whose last successful import is outside their freshness window (VAL-010).")
 
 # ---------------------------------------------------------------- reconciliation (M5)
 
@@ -248,3 +249,26 @@ class MetaOut(BaseModel):
     review_statuses: list[str]
     reconciliation_statuses: list[str]
     default_tolerance: ToleranceOut
+
+# ---------------------------------------------------------------- reliability (M7)
+
+
+class SimulatedImportIn(BaseModel):
+    since: AwareDatetime | None = Field(
+        default=None,
+        description="Only import events after this time (ISO 8601 with offset). "
+        "Defaults to the latest event time already stored for the simulated source.",
+    )
+
+
+class SourceHealthOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_name: str
+    last_run_at: datetime | None
+    last_run_status: str | None
+    last_success_at: datetime | None
+    age_hours: float | None = Field(description="Hours since the last successful import.")
+    freshness_window_hours: int | None
+    status: str = Field(description="FRESH, STALE (VAL-010), NEVER_SUCCEEDED, or NO_WINDOW for an unconfigured source")
+    message: str

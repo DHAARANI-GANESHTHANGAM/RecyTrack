@@ -8,6 +8,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# The simulated source runs from the same image as its own service (docker-compose.yml).
+COPY simulator ./simulator
 
 RUN useradd --create-home recytrack
 USER recytrack

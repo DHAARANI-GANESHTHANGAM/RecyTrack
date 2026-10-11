@@ -12,7 +12,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.config import EVENT_TYPES, MATERIAL_ALIASES, MAX_UPLOAD_BYTES, RECONCILIATION_TOLERANCE
+from app.config import EVENT_TYPES, MATERIAL_ALIASES, MAX_UPLOAD_BYTES, RECONCILIATION_TOLERANCE, SOURCE_FRESHNESS_HOURS
 from app.database.repository import SqlRepository
 from app.database.tables import (
     AuditEventRow,
@@ -23,8 +23,10 @@ from app.database.tables import (
     ReconciliationRow,
     ValidationIssueRow,
 )
+from app.ingestion.api_client import SourceError, fetch_simulated_events
+from app.ingestion.api_records import SIMULATED_SOURCE
 from app.models import RunStatus, utc_now
-from app.pipeline import run_csv_ingestion
+from app.pipeline import record_failed_run, run_api_ingestion, run_csv_ingestion
 from app.reconciliation.engine import ROLES, ReconciliationStatus, describe_formula, describe_tolerance
 from app.reconciliation.service import run_reconciliation
 from app.schemas import (
@@ -45,8 +47,11 @@ from app.schemas import (
     ReviewOut,
     ReviewStatus,
     RunOut,
+    SimulatedImportIn,
+    SourceHealthOut,
     ToleranceOut,
 )
+from app.validation.freshness import FreshnessStatus, source_health
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
@@ -57,6 +62,11 @@ EXCEPTION_STATUSES = ("QUARANTINED", "FLAGGED")
 def get_session(request: Request) -> Iterator[Session]:
     with request.app.state.sessionmaker() as session:
         yield session
+
+
+def get_now() -> datetime:
+    """The current UTC time. Tests override this dependency to fix the clock."""
+    return utc_now()
 
 
 # ---------------------------------------------------------------- meta
@@ -109,6 +119,51 @@ async def import_csv(file: UploadFile = File(...), session: Session = Depends(ge
     if result.run.status is RunStatus.FAILED:
         raise HTTPException(422, {"message": result.run.error_summary, "run": RunOut.model_validate(run).model_dump(mode="json")})
     return RunOut.model_validate(run)
+
+
+@router.post("/ingestion/simulated-api", response_model=RunOut, status_code=201)
+def import_simulated_api(
+    request: Request, body: SimulatedImportIn | None = None, session: Session = Depends(get_session)
+) -> RunOut:
+    """Import events from the simulated API source (SRS §1.4, §5.3). The source is synthetic.
+
+    Without `since`, only events after the latest one already stored for this source are fetched;
+    re-running is safe because duplicates are detected anyway (VAL-007). If the source cannot be read
+    after the configured retries, the run is saved as FAILED and the answer is 502.
+    """
+    since = body.since if body and body.since else session.scalar(
+        select(func.max(MaterialEventRow.event_timestamp)).where(MaterialEventRow.source_name == SIMULATED_SOURCE)
+    )
+    session.commit()  # end the read transaction; nothing is held open while the source is called
+    file_name = "GET /v1/events" + (f"?since={since.isoformat()}" if since else "")
+    settings = request.app.state.source_settings
+    started_at = utc_now()
+
+    try:
+        items = fetch_simulated_events(
+            settings.url,
+            since,
+            attempts=settings.attempts,
+            backoff_s=settings.backoff_s,
+            timeout_s=settings.timeout_s,
+            transport=request.app.state.source_transport,
+        )
+    except SourceError as exc:
+        log.error("simulated source import failed", extra={"error_type": exc.__class__.__name__})
+        run = record_failed_run(SqlRepository(session), str(exc), SIMULATED_SOURCE, file_name, started_at)
+        session.commit()
+        row = session.get(IngestionRunRow, run.run_id)
+        raise HTTPException(502, {"message": str(exc), "run": RunOut.model_validate(row).model_dump(mode="json")})
+
+    try:
+        result = run_api_ingestion(items, SqlRepository(session), SIMULATED_SOURCE, file_name, started_at)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        log.warning("simulated source import conflicted with a concurrent import")
+        raise HTTPException(409, "These records were imported by another run at the same time. Re-run the import; "
+                                 "already-imported rows will be counted as duplicates.")
+    return RunOut.model_validate(session.get(IngestionRunRow, result.run.run_id))
 
 
 @router.get("/ingestion/runs", response_model=Page[RunOut])
@@ -321,8 +376,12 @@ def quality_metrics(
     started_from: datetime | None = Query(None, description="Only runs started at or after this time."),
     started_to: datetime | None = Query(None, description="Only runs started before this time."),
     session: Session = Depends(get_session),
+    now: datetime = Depends(get_now),
 ):
-    """Counts and rates for one run, a time window, or all runs (FR-14)."""
+    """Counts and rates for one run, a time window, or all runs (FR-14).
+
+    `sources_stale` always covers every source, whatever the run filters.
+    """
     r = IngestionRunRow
     run_filter = []
     if run_id:
@@ -379,7 +438,33 @@ def quality_metrics(
         duplicate_rate=rate(duplicates),
         open_exceptions=open_exceptions or 0,
         issues_by_rule={code: count for code, count in issue_rows},
+        sources_stale=sum(1 for h in _source_health(session, now) if h.status is FreshnessStatus.STALE),
     )
+
+
+# ---------------------------------------------------------------- sources (M7)
+
+
+def _source_health(session: Session, now: datetime):
+    """VAL-010 for every configured source and every source seen in runs.
+
+    Only the latest run and the latest successful run per source are loaded; that is all the check needs.
+    """
+    r = IngestionRunRow
+    runs: list[IngestionRunRow] = []
+    for source_name in session.scalars(select(r.source_name).distinct()):
+        latest = select(r).where(r.source_name == source_name).order_by(r.started_at.desc()).limit(1)
+        runs += session.scalars(latest).all()
+        runs += session.scalars(latest.where(r.status == RunStatus.SUCCEEDED.value)).all()
+    return source_health(runs, SOURCE_FRESHNESS_HOURS, now)
+
+
+@router.get("/sources/health", response_model=list[SourceHealthOut])
+def sources_health(session: Session = Depends(get_session), now: datetime = Depends(get_now)):
+    """Freshness of each source (VAL-010): FRESH, STALE, NEVER_SUCCEEDED, or NO_WINDOW if not configured."""
+    return [
+        SourceHealthOut(**{**h.__dict__, "status": h.status.value}) for h in _source_health(session, now)
+    ]
 
 
 # ---------------------------------------------------------------- reconciliation
