@@ -41,7 +41,7 @@ def create_app(db_url: str | None = None, init_attempts: int = 5) -> FastAPI:
 
     app = FastAPI(
         title="RecyTrack API",
-        version="0.4.0",
+        version="1.0.0",
         description="Recycling data quality and material traceability. All demo data is synthetic.",
         lifespan=lifespan,
     )

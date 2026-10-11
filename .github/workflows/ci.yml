@@ -32,6 +32,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Tests (SQLite)
         run: pytest -q
+      - name: Measured results (fails if quality, idempotency or reconciliation regresses)
+        run: python -m scripts.measure
       - name: API tests (PostgreSQL)
         run: pytest -q tests/test_api.py tests/test_reconciliation_api.py tests/test_api_ingestion.py tests/test_freshness.py
         env:

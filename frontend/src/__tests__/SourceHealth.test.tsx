@@ -13,7 +13,7 @@ const FRESH = {
   age_hours: 3.0,
   freshness_window_hours: 24,
   status: "FRESH",
-  message: "Last successful import 3.0 h ago; window is 24 h. The latest run failed at 2026-10-10T11:00:00+00:00.",
+  message: "Last successful import 3.0 h ago; window is 24 h. The latest run failed; see its error on the Ingestion page.",
 };
 
 const STALE = {
@@ -72,6 +72,9 @@ describe("Source health", () => {
     expect(fresh.getByText("FAILED", { selector: ".badge" })).toBeInTheDocument();
     expect(fresh.getByText("2026-10-10 11:00 UTC")).toBeInTheDocument();
     expect(fresh.getByText("24 h")).toBeInTheDocument();
+    // The details text wraps inside its cell, and the row shows no raw ISO timestamps.
+    expect(fresh.getByText(/The latest run failed/)).toHaveClass("wrap");
+    expect(row("simulated_api")).not.toHaveTextContent(/\d{4}-\d{2}-\d{2}T\d{2}:/);
 
     const stale = within(row("csv"));
     expect(stale.getByText("STALE", { selector: ".badge" })).toHaveClass("badge-amber");
@@ -124,7 +127,9 @@ describe("Source health", () => {
     expect(screen.getByText(/Failed run: GET \/v1\/events/)).toBeInTheDocument();
     const summary = screen.getByText(/Failed run/).closest(".run-summary") as HTMLElement;
     expect(within(summary).getByText("FAILED", { selector: ".badge" })).toBeInTheDocument();
-    expect(within(summary).getByText(UNAVAILABLE)).toBeInTheDocument();
+    // The error is shown once, in the banner, not again under "Failed run".
+    expect(screen.getAllByText(UNAVAILABLE)).toHaveLength(1);
+    expect(within(summary).queryByText(UNAVAILABLE)).not.toBeInTheDocument();
   });
 
   it("shows an error with Retry when the health check cannot be loaded", async () => {

@@ -32,7 +32,7 @@ export default function SourceHealth() {
             columns={[
               { header: "Source", render: (s) => s.source_name },
               { header: "Freshness", render: (s) => <StatusBadge status={s.status} /> },
-              { header: "Details", render: (s) => s.message },
+              { header: "Details", render: (s) => s.message, className: "wrap" },
               {
                 header: "Window",
                 render: (s) => (s.freshness_window_hours === null ? MISSING : `${s.freshness_window_hours} h`),
@@ -97,7 +97,8 @@ function SimulatedImport({ onImported }: { onImported: () => void }) {
       </button>
       {error ? <ErrorBanner error={error} /> : null}
       {result ? <RunSummary run={result} title="Import finished" /> : null}
-      {failedRun ? <RunSummary run={failedRun} title="Failed run" /> : null}
+      {/* The banner above already shows the source error; show it once. */}
+      {failedRun ? <RunSummary run={failedRun} title="Failed run" showError={false} /> : null}
     </section>
   );
 }

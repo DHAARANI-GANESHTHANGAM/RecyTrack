@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import type { Run } from "../services/api";
 import { StatusBadge } from "./StatusBadge";
 
-/** Counts of one run, its error if it failed, and links to its records and exceptions. */
-export function RunSummary({ run, title }: { run: Run; title: string }) {
+/**
+ * Counts of one run, its error if it failed, and links to its records and exceptions.
+ * Pass `showError={false}` when the same error is already shown next to it (e.g. in an ErrorBanner).
+ */
+export function RunSummary({ run, title, showError = true }: { run: Run; title: string; showError?: boolean }) {
   return (
     <div className="run-summary" role="status">
       <h3>
@@ -32,7 +35,7 @@ export function RunSummary({ run, title }: { run: Run; title: string }) {
           <dd>{run.duplicate_count}</dd>
         </div>
       </dl>
-      {run.error_summary ? <p className="error-text">{run.error_summary}</p> : null}
+      {showError && run.error_summary ? <p className="error-text">{run.error_summary}</p> : null}
       {run.status === "SUCCEEDED" ? (
         <p>
           <Link to={`/records?run_id=${encodeURIComponent(run.run_id)}`}>See this run's records</Link>

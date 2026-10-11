@@ -119,7 +119,7 @@ SIM_FAILURE_MODE=always_500 uvicorn simulator.main:app --port 8001   # without D
 | CSV import, **422** | `CSV header does not match the contract …`, `File is empty …` | Whole-file problem. The run is FAILED; fix the file as the message says. |
 | Any endpoint, **503** | `Database unavailable. Check that PostgreSQL is running …` | The database is down or `DATABASE_URL` is wrong. |
 | Source health | `STALE: No successful import in 30.5 h; window is 24 h.` | VAL-010. Import from that source again, or investigate why its imports fail. |
-| Source health | `… The latest run failed at …` | The source is still inside its window, but the most recent import failed. See that run's `error_summary` on the Ingestion page. |
+| Source health | `… The latest run failed; see its error on the Ingestion page.` | The source is still inside its window, but the most recent import failed (its time is in **Last run**). See that run's `error_summary` on the Ingestion page. |
 | Startup | `SOURCE_RETRY_ATTEMPTS='abc' is not valid …`, `LOG_FORMAT 'xml' is not supported …` | Fix the environment variable. |
 
 Retries are safe: reading events is idempotent, and importing the same events twice creates no new events (VAL-007).

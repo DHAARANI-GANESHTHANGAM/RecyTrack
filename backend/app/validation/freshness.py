@@ -71,7 +71,8 @@ def _evaluate(source: str, runs: list[RunLike], window: int | None, now: datetim
         message = f"Last successful import {_hours(age_hours)} h ago; {window_text}."
 
     if latest is not None and last_success is not None and latest is not last_success and last_status == "FAILED":
-        message += f" The latest run failed at {latest.started_at.isoformat()}."
+        # No timestamp in the text: the time is in last_run_at, which clients format themselves.
+        message += " The latest run failed; see its error on the Ingestion page."
     return SourceHealth(
         source_name=source,
         last_run_at=latest.started_at if latest else None,
