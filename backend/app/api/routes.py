@@ -12,7 +12,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.config import MAX_UPLOAD_BYTES, RECONCILIATION_TOLERANCE
+from app.config import EVENT_TYPES, MATERIAL_ALIASES, MAX_UPLOAD_BYTES, RECONCILIATION_TOLERANCE
 from app.database.repository import SqlRepository
 from app.database.tables import (
     AuditEventRow,
@@ -25,7 +25,7 @@ from app.database.tables import (
 )
 from app.models import RunStatus, utc_now
 from app.pipeline import run_csv_ingestion
-from app.reconciliation.engine import ROLES, describe_formula, describe_tolerance
+from app.reconciliation.engine import ROLES, ReconciliationStatus, describe_formula, describe_tolerance
 from app.reconciliation.service import run_reconciliation
 from app.schemas import (
     AuditOut,
@@ -34,6 +34,7 @@ from app.schemas import (
     ExceptionSummary,
     IssueOut,
     LinkedEventOut,
+    MetaOut,
     Page,
     QualityMetrics,
     RawRecordOut,
@@ -42,7 +43,9 @@ from app.schemas import (
     ReconciliationOut,
     ReviewIn,
     ReviewOut,
+    ReviewStatus,
     RunOut,
+    ToleranceOut,
 )
 
 log = logging.getLogger(__name__)
@@ -54,6 +57,29 @@ EXCEPTION_STATUSES = ("QUARANTINED", "FLAGGED")
 def get_session(request: Request) -> Iterator[Session]:
     with request.app.state.sessionmaker() as session:
         yield session
+
+
+# ---------------------------------------------------------------- meta
+
+
+@router.get("/meta", response_model=MetaOut)
+def meta(session: Session = Depends(get_session)):
+    """Valid values for dashboard dropdowns (M6). Facilities are the ones seen in imported events."""
+    facilities = session.scalars(
+        select(MaterialEventRow.facility_id)
+        .where(MaterialEventRow.facility_id.is_not(None))
+        .distinct()
+        .order_by(MaterialEventRow.facility_id)
+    ).all()
+    return MetaOut(
+        event_types=sorted(EVENT_TYPES),
+        material_codes=sorted(set(MATERIAL_ALIASES.values())),
+        facilities=list(facilities),
+        validation_statuses=["ACCEPTED", "FLAGGED", "QUARANTINED"],  # DUPLICATE rows are never stored as events
+        review_statuses=[s.value for s in ReviewStatus],
+        reconciliation_statuses=[s.value for s in ReconciliationStatus],
+        default_tolerance=ToleranceOut(**RECONCILIATION_TOLERANCE),
+    )
 
 
 # ---------------------------------------------------------------- ingestion

@@ -334,3 +334,31 @@ def test_database_unavailable_returns_503_without_secrets():
     assert r.status_code == 503
     assert r.json()["detail"] == DB_UNAVAILABLE
     assert "s3cret" not in r.text
+
+
+# ---------------------------------------------------------------- meta (M6)
+
+
+def test_meta_on_empty_database(client):
+    r = client.get("/api/v1/meta")
+    assert r.status_code == 200
+    assert r.json() == {
+        "event_types": [
+            "CONSUMPTION", "INVENTORY_ADJUSTMENT", "INVENTORY_COUNT", "LOSS", "PRODUCTION", "RECEIPT", "SHIPMENT",
+        ],
+        "material_codes": ["PLASTIC_FILM", "RECYCLED_RESIN"],
+        "facilities": [],
+        "validation_statuses": ["ACCEPTED", "FLAGGED", "QUARANTINED"],
+        "review_statuses": ["OPEN", "APPROVED", "REJECTED", "NEEDS_INFO"],
+        "reconciliation_statuses": ["WITHIN_TOLERANCE", "NEEDS_REVIEW", "NEEDS_DATA"],
+        "default_tolerance": {"absolute_kg": "5", "percent_of_throughput": "1.0"},
+    }
+
+
+def test_meta_lists_imported_facilities(client, upload):
+    upload("valid_events.csv")
+    upload("invalid_events.csv")
+    facilities = client.get("/api/v1/meta").json()["facilities"]
+    assert facilities == sorted(set(facilities))  # distinct and sorted
+    assert {"FAC-01", "FAC-02"} <= set(facilities)
+    assert None not in facilities and "" not in facilities

@@ -15,12 +15,15 @@ RecyTrack imports recycling-operation records, standardizes and validates them, 
 | M3 Validation | Normalization, VAL-001…009, quarantine/flag, idempotent re-import | ✔️ done |
 | M4 Database + API | PostgreSQL tables, FastAPI endpoints, review audit trail, CSV export, Docker Compose | ✔️ done |
 | M5 Reconciliation | Material-flow balance with tolerance and NEEDS_DATA, snapshots traceable to their events | ✔️ done |
-| M6 Dashboard | React views for runs, exceptions, metrics, reconciliation | planned |
+| M6 Dashboard | React views for runs, records, exceptions and review, metrics, reconciliation | ✔️ done |
 | M7–M8 | Reliability, CI hardening, demo and evidence | planned |
 
 ## Architecture
 
 ```
+Browser ──► React dashboard  (frontend/, Vite dev server or nginx in Docker)
+                 │  same-origin /api/v1/... (proxied, no CORS)
+                 ▼
 CSV upload ──► FastAPI  (app/main.py, app/api/routes.py)
                  │
                  ▼
@@ -45,14 +48,14 @@ constraint on `(source_name, source_record_id, payload_hash)` in case two import
 
 ## Quick start
 
-### Option 1: Docker (PostgreSQL + API)
+### Option 1: Docker (PostgreSQL + API + dashboard)
 
 ```bash
 cp .env.example .env          # then change POSTGRES_PASSWORD
 docker compose up --build
 ```
 
-Open http://localhost:8000/docs for the interactive API documentation.
+Open http://localhost:5173 for the dashboard and http://localhost:8000/docs for the interactive API documentation.
 
 ### Option 2: Python only (no Docker)
 
@@ -104,6 +107,7 @@ curl "http://localhost:8000/api/v1/reconciliations?status=NEEDS_REVIEW"
 | `POST /api/v1/reconciliations` | Run a material-flow balance: `facility_id`, `material_code`, `period_start`, `period_end` (ISO 8601 with offset), optional `absolute_tolerance_kg`, `percent_tolerance`, `actor_label`. Saves a new snapshot and returns `201` with the full detail. `422` if `period_end <= period_start`, a datetime has no offset, the material code is unknown, or a tolerance is negative. |
 | `GET /api/v1/reconciliations` | List snapshots, newest first (`facility_id`, `material_code`, `status`, paging) |
 | `GET /api/v1/reconciliations/{id}` | Inputs, totals, `formula` with the numbers filled in, `tolerance_explanation`, status, reasons, and linked events grouped by role |
+| `GET /api/v1/meta` | Valid values for dashboard dropdowns: event types, material codes, imported facilities, statuses, default tolerance |
 | `GET /health` | Service and database availability (`503` if the database is down) |
 
 Quantities are returned as decimal strings (e.g. `"453.59237"`) so no precision is lost. Timestamps are UTC.
@@ -137,13 +141,51 @@ tolerance_kg        = max(absolute_kg, throughput_kg × percent_of_throughput / 
 The scenarios in `data/fixtures/reconciliation_scenarios.csv` and their expected results in
 `data/fixtures/expected_reconciliations.csv` are checked by the test suite.
 
+## Dashboard
+
+A React + TypeScript single-page app in [`frontend/`](frontend/README.md) that uses the API above, unchanged.
+It shows a banner on every page: demo data is synthetic and not connected to any real facility.
+
+**Run it in development** (two terminals):
+
+```bash
+cd backend && uvicorn app.main:app --reload     # API on :8000
+cd frontend && npm ci && npm run dev            # dashboard on http://localhost:5173
+```
+
+Vite proxies `/api`, `/health` and `/docs` to the API, so the backend needs no CORS settings.
+**With Docker**, `docker compose up --build` serves the built dashboard from nginx at http://localhost:5173.
+
+| Page | What it does |
+|---|---|
+| Overview | Quality tiles and rates, issues-by-rule chart, latest runs and reconciliations, API health |
+| Ingestion | Upload a CSV and see the run summary (including a failed run's error); paged runs list |
+| Records | Normalized events with filters kept in the URL; CSV export with the same filters |
+| Exceptions | Quarantined and flagged records, filterable by rule code and review status; CSV export |
+| Exception detail | Original row, normalized values, issues, run; record a review decision; review history |
+| Reconciliation | Run a balance for a facility, material and UTC period (optional tolerance overrides); snapshot list |
+| Reconciliation detail | Status and its meaning, reasons, balance inputs, tolerance, formula, linked events by role |
+
+The SRS *Source health* page is shown in the navigation as "planned"; it needs VAL-010 and the simulated API source (M7).
+Quantities are shown from the API's decimal strings, formatted on the string (never through floats). Times are shown in UTC.
+
+The whole demo flow (SRS Appendix B) works in the browser: import `valid_events.csv`, import `invalid_events.csv`,
+open a quarantined record to see its rule code and original value, re-import `valid_events.csv` to see 10 duplicates,
+then import `reconciliation_scenarios.csv` and run a reconciliation for `FAC-11` / `PLASTIC_FILM` in October 2026.
+
+<!-- Screenshots: add real captures here, e.g. docs/screenshots/overview.png, exception-detail.png, reconciliation-detail.png -->
+| Overview | Exception detail | Reconciliation detail |
+|---|---|---|
+| *(screenshot to be added)* | *(screenshot to be added)* | *(screenshot to be added)* |
+
 ## Measured results
 
 Measured on the development container. They are not a production guarantee.
 
 | Check | Result |
 |---|---|
-| Test suite | 163 tests pass on SQLite. The 28 M4 API tests also pass on PostgreSQL 16; the 22 reconciliation API tests run on PostgreSQL in CI |
+| Frontend tests | 56 Vitest + React Testing Library tests; `npm run typecheck` and `npm run build` pass |
+| Test suite | 165 backend tests pass on SQLite. The 28 M4 API tests also pass on PostgreSQL 16; the 22 reconciliation API tests run on PostgreSQL in CI |
 | Reconciliation fixtures (`expected_reconciliations.csv`) | All 7 scenarios get the expected status, variance and tolerance |
 | Labeled fixtures (`expected_outcomes.csv`) | All 25 rows get the expected status and rule codes (15 faulty-file rows, 10 clean rows; 0 clean rows flagged) |
 | 10,000-row synthetic CSV via the API on PostgreSQL 16 (target < 30 s, NFR-08) | First import 3.9 s; re-import 1.0 s with 10,000 duplicates and 0 new events |
@@ -166,4 +208,4 @@ Measured on the development container. They are not a production guarantee.
 - Stock counts are point-in-time. A balance is only as good as its opening and closing counts.
 - Events with an unknown material or an unparseable timestamp cannot be placed in a balance, so they do not
   appear in a reconciliation; they remain visible in `/quarantine`.
-- The dashboard is not built yet.
+- The dashboard has no login and no live updates; refresh or use Retry to reload data.
