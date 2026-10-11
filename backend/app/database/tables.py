@@ -1,7 +1,4 @@
-"""PostgreSQL schema (SRS §5.2) as SQLAlchemy ORM tables.
-
-The reconciliations table is added with milestone M5.
-"""
+"""PostgreSQL schema (SRS §5.2) as SQLAlchemy ORM tables."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -177,3 +174,52 @@ class AuditEventRow(Base):
     actor_label: Mapped[str] = mapped_column(String(100))
     details: Mapped[dict] = mapped_column(Payload)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class ReconciliationRow(Base):
+    """Snapshot of one material-flow check (FR-10, FR-11). Inserted, never updated.
+
+    Kg columns are NULL when the value cannot be calculated (e.g. no opening count).
+    """
+
+    __tablename__ = "reconciliations"
+    __table_args__ = (Index("ix_reconciliations_facility_material", "facility_id", "material_code"),)
+
+    reconciliation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    facility_id: Mapped[str] = mapped_column(String(50))
+    material_code: Mapped[str] = mapped_column(String(50))
+    period_start: Mapped[datetime] = mapped_column(UTCDateTime())
+    period_end: Mapped[datetime] = mapped_column(UTCDateTime())
+    opening_stock_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    receipts_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    production_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    adjustments_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    shipments_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    losses_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    consumption_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    closing_stock_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    expected_closing_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    variance_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    throughput_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    tolerance_kg: Mapped[Decimal | None] = mapped_column(ExactDecimal())
+    tolerance_absolute_kg: Mapped[Decimal] = mapped_column(ExactDecimal())
+    tolerance_percent: Mapped[Decimal] = mapped_column(ExactDecimal())
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    reasons: Mapped[list] = mapped_column(Payload)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+
+    events: Mapped[list["ReconciliationEventRow"]] = relationship(back_populates="reconciliation")
+
+
+class ReconciliationEventRow(Base):
+    """Which events a reconciliation used or left out, and in what role (traceability, FR-15)."""
+
+    __tablename__ = "reconciliation_events"
+
+    reconciliation_id: Mapped[str] = mapped_column(ForeignKey("reconciliations.reconciliation_id"), primary_key=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey("material_events.event_id"), primary_key=True, index=True)
+    role: Mapped[str] = mapped_column(String(30))
+    excluded_reason: Mapped[str | None] = mapped_column(Text)
+
+    reconciliation: Mapped[ReconciliationRow] = relationship(back_populates="events")
+    event: Mapped[MaterialEventRow] = relationship()

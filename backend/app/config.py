@@ -28,7 +28,15 @@ REQUIRED_FIELDS = (
 OPTIONAL_FIELDS = ("batch_id",)
 
 EVENT_TYPES = frozenset(
-    {"RECEIPT", "PRODUCTION", "SHIPMENT", "LOSS", "INVENTORY_ADJUSTMENT"}
+    {
+        "RECEIPT",
+        "PRODUCTION",
+        "SHIPMENT",
+        "LOSS",
+        "INVENTORY_ADJUSTMENT",
+        "INVENTORY_COUNT",  # physical stock count at a point in time (M5)
+        "CONSUMPTION",  # feedstock used up by processing (M5)
+    }
 )
 # Event types whose quantity may legitimately be negative (VAL-003).
 SIGNED_EVENT_TYPES = frozenset({"INVENTORY_ADJUSTMENT"})
@@ -62,6 +70,11 @@ MATERIAL_ALIASES = {
     "pcr resin": "RECYCLED_RESIN",
     "recycled_resin": "RECYCLED_RESIN",
 }
+
+# Reconciliation tolerance (REC-002). A balance is within tolerance when
+# |variance| <= max(absolute_kg, throughput_kg * percent_of_throughput / 100).
+# Values are illustrative until validated against domain evidence (SRS §16).
+RECONCILIATION_TOLERANCE = {"absolute_kg": Decimal("5"), "percent_of_throughput": Decimal("1.0")}
 
 # Upload limit for CSV files (NFR-05).
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024

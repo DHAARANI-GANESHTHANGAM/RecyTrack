@@ -9,7 +9,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.config import MATERIAL_ALIASES
 
 T = TypeVar("T")
 
@@ -143,3 +145,87 @@ class QualityMetrics(BaseModel):
     duplicate_rate: float | None
     open_exceptions: int
     issues_by_rule: dict[str, int]
+
+# ---------------------------------------------------------------- reconciliation (M5)
+
+MATERIAL_CODES = frozenset(MATERIAL_ALIASES.values())
+
+
+class ReconciliationIn(BaseModel):
+    facility_id: str = Field(min_length=1, max_length=50, examples=["FAC-10"])
+    material_code: str = Field(examples=["PLASTIC_FILM"])
+    period_start: AwareDatetime = Field(description="ISO 8601 with a timezone offset, e.g. 2026-10-01T00:00:00Z.")
+    period_end: AwareDatetime = Field(description="ISO 8601 with a timezone offset. Must be after period_start.")
+    absolute_tolerance_kg: Decimal | None = Field(default=None, ge=0, description="Defaults to the configured value.")
+    percent_tolerance: Decimal | None = Field(
+        default=None, ge=0, description="Percent of throughput. Defaults to the configured value."
+    )
+    actor_label: str = Field(default="system", min_length=1, max_length=100)
+
+    @field_validator("facility_id", "material_code")
+    @classmethod
+    def _upper(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("material_code")
+    @classmethod
+    def _known_material(cls, value: str) -> str:
+        if value not in MATERIAL_CODES:
+            raise ValueError("unknown material_code; use one of " + ", ".join(sorted(MATERIAL_CODES)))
+        return value
+
+    @model_validator(mode="after")
+    def _period_order(self) -> "ReconciliationIn":
+        if self.period_end <= self.period_start:
+            raise ValueError("period_end must be after period_start")
+        return self
+
+
+class ReconciliationOut(BaseModel):
+    """One reconciliation snapshot. Kg values are null when they could not be calculated."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    reconciliation_id: str
+    facility_id: str
+    material_code: str
+    period_start: datetime
+    period_end: datetime
+    opening_stock_kg: Decimal | None
+    receipts_kg: Decimal | None
+    production_kg: Decimal | None
+    adjustments_kg: Decimal | None
+    shipments_kg: Decimal | None
+    losses_kg: Decimal | None
+    consumption_kg: Decimal | None
+    closing_stock_kg: Decimal | None
+    expected_closing_kg: Decimal | None
+    variance_kg: Decimal | None
+    throughput_kg: Decimal | None
+    tolerance_kg: Decimal | None
+    tolerance_absolute_kg: Decimal
+    tolerance_percent: Decimal
+    status: str = Field(description="WITHIN_TOLERANCE, NEEDS_REVIEW (a review flag, not proof of an error) or NEEDS_DATA")
+    reasons: list[str]
+    created_at: datetime
+
+
+class LinkedEventOut(BaseModel):
+    event_id: str
+    source_record_id: str | None
+    event_type: str | None
+    quantity_kg: Decimal | None
+    event_timestamp: datetime | None
+    validation_status: str
+    excluded_reason: str | None
+
+
+class ReconciliationDetail(ReconciliationOut):
+    """A snapshot with the formula, the tolerance and every event it used or left out (FR-15)."""
+
+    formula: str
+    tolerance_explanation: str
+    events: dict[str, list[LinkedEventOut]]
