@@ -229,3 +229,22 @@ class ReconciliationDetail(ReconciliationOut):
     formula: str
     tolerance_explanation: str
     events: dict[str, list[LinkedEventOut]]
+
+# ---------------------------------------------------------------- dashboard (M6)
+
+
+class ToleranceOut(BaseModel):
+    absolute_kg: Decimal
+    percent_of_throughput: Decimal
+
+
+class MetaOut(BaseModel):
+    """Valid values for the dashboard's dropdowns."""
+
+    event_types: list[str]
+    material_codes: list[str]
+    facilities: list[str]
+    validation_statuses: list[str]
+    review_statuses: list[str]
+    reconciliation_statuses: list[str]
+    default_tolerance: ToleranceOut
