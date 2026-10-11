@@ -1,5 +1,6 @@
 """VAL-010 source freshness: the pure function and GET /api/v1/sources/health."""
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -110,7 +111,7 @@ def client():
 
 def add_run(client, source_name, status, started_at):
     with client.app.state.sessionmaker() as s:
-        s.add(IngestionRunRow(run_id=f"{source_name}-{started_at.isoformat()}", source_name=source_name,
+        s.add(IngestionRunRow(run_id=str(uuid.uuid4()), source_name=source_name,
                               started_at=started_at, finished_at=started_at, status=status))
         s.commit()
 
