@@ -68,7 +68,9 @@ def test_failure_inside_the_window_stays_fresh_and_shows_the_failure():
     assert h.last_run_status == "FAILED"
     assert h.last_run_at == ago(1)
     assert h.last_success_at == ago(5)
-    assert "The latest run failed at 2026-10-10T11:00:00+00:00." in h.message
+    assert h.message.endswith("The latest run failed; see its error on the Ingestion page.")
+    # The failure time is a separate field, not raw ISO text inside the message.
+    assert "2026-" not in h.message
 
 
 def test_boundary_exactly_at_the_window_is_fresh():

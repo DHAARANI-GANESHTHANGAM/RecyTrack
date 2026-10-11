@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export interface Column<T> {
   header: string;
   render: (row: T) => ReactNode;
-  /** "num" right-aligns numbers so digits line up. */
+  /** "num" right-aligns numbers so digits line up; "wrap" lets long text wrap inside the cell. */
   className?: string;
 }
 

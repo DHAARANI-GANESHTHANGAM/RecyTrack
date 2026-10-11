@@ -345,6 +345,13 @@ th.num {
   font-variant-numeric: tabular-nums;
 }
 
+/* Long text (e.g. a source health message) wraps inside its cell instead of widening the table. */
+td.wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 16rem;
+}
+
 tr.clickable {
   cursor: pointer;
 }
