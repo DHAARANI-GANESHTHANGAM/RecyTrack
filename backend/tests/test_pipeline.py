@@ -117,3 +117,11 @@ def test_cli_prints_summary(fixtures_dir, capsys):
 def test_cli_reports_missing_file(capsys):
     assert main(["/nonexistent/file.csv"]) == 1
     assert "Cannot read" in capsys.readouterr().err
+
+
+def test_duplicate_key_uses_normalized_id():
+    repo = InMemoryRepository()
+    row = "SRC  7,FAC-01,Plastic film,RECEIPT,1,kg,2026-10-01T09:00:00Z,\n"
+    run_csv_ingestion((HEADER + row).encode(), repo)
+    second = run_csv_ingestion((HEADER + row).encode(), repo)
+    assert second.run.duplicate_count == 1

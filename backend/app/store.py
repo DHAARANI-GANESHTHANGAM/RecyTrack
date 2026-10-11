@@ -12,7 +12,7 @@ class Repository(Protocol):
     def save_run(self, run: IngestionRun) -> None: ...
     def save_raw(self, raw: RawRecord) -> None: ...
     def save_event(self, event: NormalizedEvent, payload_hash: str) -> None: ...
-    def find_hashes_for_key(self, key: StableKey) -> set[str]: ...
+    def find_hashes_for_keys(self, keys: set[StableKey]) -> dict[StableKey, set[str]]: ...
 
 
 class InMemoryRepository:
@@ -34,5 +34,5 @@ class InMemoryRepository:
             key = (event.source_name, event.source_record_id)
             self._hashes_by_key.setdefault(key, set()).add(payload_hash)
 
-    def find_hashes_for_key(self, key: StableKey) -> set[str]:
-        return set(self._hashes_by_key.get(key, set()))
+    def find_hashes_for_keys(self, keys: set[StableKey]) -> dict[StableKey, set[str]]:
+        return {k: set(self._hashes_by_key[k]) for k in keys if k in self._hashes_by_key}

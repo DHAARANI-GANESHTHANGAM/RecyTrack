@@ -5,6 +5,7 @@ Usage:  python -m app.pipeline path/to/file.csv [more.csv ...]
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 
@@ -18,7 +19,7 @@ from app.models import (
     ValidationStatus,
     utc_now,
 )
-from app.normalization.normalize import normalize_record
+from app.normalization.normalize import clean_text, normalize_record
 from app.store import InMemoryRepository, Repository
 from app.validation.rules import status_for, validate_record
 
@@ -29,9 +30,11 @@ class IngestionResult:
     events: list[NormalizedEvent] = field(default_factory=list)
 
 
-def run_csv_ingestion(data: bytes, repo: Repository, source_name: str = "csv") -> IngestionResult:
+def run_csv_ingestion(
+    data: bytes, repo: Repository, source_name: str = "csv", file_name: str | None = None
+) -> IngestionResult:
     """Import one CSV payload. Whole-file problems mark the run FAILED instead of raising."""
-    run = IngestionRun(source_name=source_name)
+    run = IngestionRun(source_name=source_name, file_name=file_name)
     repo.save_run(run)
     result = IngestionResult(run=run)
 
@@ -41,7 +44,13 @@ def run_csv_ingestion(data: bytes, repo: Repository, source_name: str = "csv") -
         run.status = RunStatus.FAILED
         run.error_summary = str(exc)
         run.finished_at = utc_now()
+        repo.save_run(run)
         return result
+
+    # Hashes already stored per stable key, kept up to date as this run adds events.
+    known = repo.find_hashes_for_keys(
+        {(source_name, key_id) for r in raw_records if (key_id := clean_text(r.payload.get("source_record_id")))}
+    )
 
     for raw in raw_records:
         repo.save_raw(raw)  # raw data is always kept, whatever happens next
@@ -50,7 +59,7 @@ def run_csv_ingestion(data: bytes, repo: Repository, source_name: str = "csv") -
 
         # VAL-007 / VAL-009: stable key = (source_name, source_record_id).
         if event.source_record_id:
-            known_hashes = repo.find_hashes_for_key((source_name, event.source_record_id))
+            known_hashes = known.get((source_name, event.source_record_id), set())
             if raw.payload_hash in known_hashes:
                 event.validation_status = ValidationStatus.DUPLICATE
                 event.issues = [
@@ -83,6 +92,8 @@ def run_csv_ingestion(data: bytes, repo: Repository, source_name: str = "csv") -
         event.issues = issues
         event.validation_status = status_for(issues)
         repo.save_event(event, raw.payload_hash)
+        if event.source_record_id:
+            known.setdefault((source_name, event.source_record_id), set()).add(raw.payload_hash)
         result.events.append(event)
 
         if event.validation_status is ValidationStatus.ACCEPTED:
@@ -94,6 +105,7 @@ def run_csv_ingestion(data: bytes, repo: Repository, source_name: str = "csv") -
 
     run.status = RunStatus.SUCCEEDED
     run.finished_at = utc_now()
+    repo.save_run(run)
     return result
 
 
@@ -121,7 +133,7 @@ def main(argv: list[str]) -> int:
             print(f"Cannot read {path}: {exc.strerror}", file=sys.stderr)
             failed = True
             continue
-        result = run_csv_ingestion(data, repo)
+        result = run_csv_ingestion(data, repo, file_name=os.path.basename(path))
         failed |= result.run.status is RunStatus.FAILED
         _print_result(path, result)
     return 1 if failed else 0
