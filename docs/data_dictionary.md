@@ -34,6 +34,59 @@ other unsigned types.
 
 Whole-file problems (empty file, wrong or missing columns, non-UTF-8 data, over 10 MB) fail the run with a message saying what to fix. No rows are imported in that case.
 
+## Simulated API source contract (M7)
+
+The simulated source (`backend/simulator/`, a separate service) is **synthetic test data**, not a real system.
+`GET /v1/events?since=<ISO 8601 with offset>&limit=<1..1000, default 500>` returns:
+
+```json
+{"source": "simulated_api", "simulated": true,
+ "items": [{"id": "SIM-0001", "facility": "FAC-20", "material": "Plastic film", "type": "RECEIPT",
+            "qty": "1200.5", "unit": "kg", "occurred_at": "2026-10-01T06:00:00Z", "batch": "SB-1"}],
+ "next_since": "2026-10-01T06:00:00Z"}
+```
+
+- `since` is exclusive and filters on the event time; items are sorted by time, then `id`. A `since` without an
+  offset is rejected with `422`. `next_since` is the time of the last item returned.
+- 200 events, always the same (fixed seed): October 2026, facilities `FAC-20` and `FAC-21`, both materials, every
+  event type. 20 (10%) are deliberately faulty; their expected outcomes are in
+  [`data/fixtures/simulated_expected_outcomes.csv`](../data/fixtures/simulated_expected_outcomes.csv):
+
+| Fault | Count | Expected |
+|---|---|---|
+| `qty` missing | 4 | `QUARANTINED`, VAL-001 |
+| `unit` = `tonnes` | 4 | `QUARANTINED`, VAL-004 |
+| bad `occurred_at` (impossible date, no offset, or `DD/MM/YYYY`) | 3 | `QUARANTINED`, VAL-005 |
+| `type` = `TRANSFER` | 3 | `QUARANTINED`, VAL-006 |
+| negative `qty` on a `SHIPMENT` | 3 | `FLAGGED`, VAL-003 |
+| same `id` as an earlier event with a different `qty` | 3 | `FLAGGED`, VAL-009 |
+
+A first full import gives 200 received, 180 accepted, 14 quarantined, 6 flagged.
+
+### Field mapping
+
+Each item becomes a raw record with the CSV contract's field names, so the same normalization and validation apply.
+
+| API field | Raw record field |
+|---|---|
+| `id` | `source_record_id` |
+| `facility` | `facility_id` |
+| `material` | `material_name` |
+| `type` | `event_type` |
+| `qty` | `quantity` |
+| `unit` | `unit` |
+| `occurred_at` | `event_timestamp` |
+| `batch` | `batch_id` |
+
+- Values are converted to text **exactly as received** (no trimming or cleanup). A missing key or `null` becomes `""`,
+  so a missing required field is reported by VAL-001.
+- The whole original item is kept as `_source_json` (compact JSON, sorted keys) in the raw payload (FR-03).
+- Keys outside the mapping are listed in `_extra_fields` and make the item structurally suspect: VAL-001, like extra
+  cells in a CSV row.
+- `row_number` is the item's 1-based position in the response. The run's `file_name` is the request, e.g.
+  `GET /v1/events?since=2026-10-25T22:41:00+00:00`.
+- Duplicate keys are `(simulated_api, id)`, separate from CSV records.
+
 ## Normalized event
 
 | Field | Type | Meaning |
@@ -41,7 +94,7 @@ Whole-file problems (empty file, wrong or missing columns, non-UTF-8 data, over 
 | `event_id` | UUID | Internal ID. |
 | `raw_id` | UUID | Link to the untouched raw record. |
 | `run_id` | UUID | Ingestion run that produced it. |
-| `source_name` | text | `csv` (later also `simulated_api`). |
+| `source_name` | text | `csv` or `simulated_api`. |
 | `source_record_id` | text | As in the source, trimmed. |
 | `facility_id` | text | Upper-cased. |
 | `material_name_raw` | text | Exactly as received. |
@@ -57,7 +110,7 @@ Whole-file problems (empty file, wrong or missing columns, non-UTF-8 data, over 
 
 ## Raw record
 
-Every input row is stored as a read-only `RawRecord`, whatever happens to it later. It holds `raw_id`, `run_id`, `source_name`, `row_number` (as in the file, header = row 1), the original `payload` and a SHA-256 `payload_hash`.
+Every input row is stored as a read-only `RawRecord`, whatever happens to it later. It holds `raw_id`, `run_id`, `source_name`, `row_number` (as in the file, header = row 1; for the API source, the position in the response), the original `payload` and a SHA-256 `payload_hash`.
 
 ## Ingestion run
 

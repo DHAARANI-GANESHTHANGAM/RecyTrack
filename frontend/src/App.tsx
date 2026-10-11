@@ -12,6 +12,7 @@ const Exceptions = lazy(() => import("./pages/Exceptions"));
 const ExceptionDetail = lazy(() => import("./pages/ExceptionDetail"));
 const Reconciliations = lazy(() => import("./pages/Reconciliations"));
 const ReconciliationDetail = lazy(() => import("./pages/ReconciliationDetail"));
+const SourceHealth = lazy(() => import("./pages/SourceHealth"));
 
 const NAV = [
   { to: "/", label: "Overview", end: true },
@@ -19,6 +20,7 @@ const NAV = [
   { to: "/records", label: "Records" },
   { to: "/exceptions", label: "Exceptions" },
   { to: "/reconciliations", label: "Reconciliation" },
+  { to: "/sources", label: "Source health" },
 ];
 
 export default function App() {
@@ -41,12 +43,6 @@ export default function App() {
                 </li>
               ))}
               <li>
-                {/* SRS Source health needs VAL-010 and the simulated API source (M7). */}
-                <span className="nav-disabled" aria-disabled="true">
-                  Source health <small>planned</small>
-                </span>
-              </li>
-              <li>
                 <a href="/docs" target="_blank" rel="noreferrer">
                   API docs ↗
                 </a>
@@ -64,6 +60,7 @@ export default function App() {
               <Route path="/exceptions/:eventId" element={<ExceptionDetail />} />
               <Route path="/reconciliations" element={<Reconciliations />} />
               <Route path="/reconciliations/:id" element={<ReconciliationDetail />} />
+              <Route path="/sources" element={<SourceHealth />} />
               <Route
                 path="*"
                 element={

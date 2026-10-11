@@ -79,6 +79,11 @@ function OverviewBody({ data }: { data: OverviewData }) {
             value={m.open_exceptions}
             hint={<Link to="/exceptions?review_status=OPEN">Review them</Link>}
           />
+          <StatTile
+            label="Stale sources"
+            value={m.sources_stale}
+            hint={<Link to="/sources">Source health</Link>}
+          />
         </div>
       </section>
 

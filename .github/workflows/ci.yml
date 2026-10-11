@@ -33,7 +33,7 @@ jobs:
       - name: Tests (SQLite)
         run: pytest -q
       - name: API tests (PostgreSQL)
-        run: pytest -q tests/test_api.py tests/test_reconciliation_api.py
+        run: pytest -q tests/test_api.py tests/test_reconciliation_api.py tests/test_api_ingestion.py tests/test_freshness.py
         env:
           TEST_DATABASE_URL: postgresql+psycopg://recytrack:recytrack@localhost:5432/recytrack_test
 
@@ -53,3 +53,14 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --run
       - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.yml
+        run: docker compose config -q
+      - name: Build images
+        run: docker compose build

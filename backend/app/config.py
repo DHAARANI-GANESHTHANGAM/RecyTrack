@@ -78,3 +78,7 @@ RECONCILIATION_TOLERANCE = {"absolute_kg": Decimal("5"), "percent_of_throughput"
 
 # Upload limit for CSV files (NFR-05).
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+# Source freshness windows in hours (VAL-010). A source is STALE when its last successful
+# import is older than its window. Values are illustrative (SRS §16).
+SOURCE_FRESHNESS_HOURS = {"csv": 168, "simulated_api": 24}

@@ -36,3 +36,17 @@ def make_raw(**overrides) -> RawRecord:
 @pytest.fixture
 def fixtures_dir() -> Path:
     return FIXTURES
+
+
+def simulator_transport(sim_app):
+    """An httpx transport that sends requests to the simulator app in-process (no network)."""
+    import httpx
+    from fastapi.testclient import TestClient
+
+    sim = TestClient(sim_app)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        r = sim.request(request.method, request.url.path, params=request.url.params, headers={"accept": "application/json"})
+        return httpx.Response(r.status_code, headers={"content-type": r.headers.get("content-type", "")}, content=r.content)
+
+    return httpx.MockTransport(handle)

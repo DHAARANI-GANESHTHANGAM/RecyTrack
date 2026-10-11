@@ -123,8 +123,7 @@ code {
   padding: 0;
 }
 
-.sidebar a,
-.nav-disabled {
+.sidebar a {
   display: block;
   padding: 7px 10px;
   border-radius: 6px;
@@ -139,19 +138,6 @@ code {
 .sidebar a.active {
   background: var(--accent);
   color: var(--accent-text);
-}
-
-.nav-disabled {
-  color: var(--muted);
-  cursor: not-allowed;
-}
-
-.nav-disabled small {
-  margin-left: 4px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.75rem;
 }
 
 .content {

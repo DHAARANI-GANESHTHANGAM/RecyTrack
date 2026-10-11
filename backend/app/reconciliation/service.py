@@ -1,6 +1,8 @@
 """Load events from the database, reconcile them and save the snapshot (FR-10, FR-11, FR-15)."""
 from __future__ import annotations
 
+import logging
+import time
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -18,6 +20,8 @@ from app.database.tables import (
 )
 from app.models import utc_now
 from app.reconciliation.engine import ReconEvent, exclusion_reason, reconcile
+
+log = logging.getLogger(__name__)
 
 
 def _to_recon_event(row: MaterialEventRow) -> ReconEvent:
@@ -69,6 +73,7 @@ def run_reconciliation(
 
     Writes go into the caller's session; the caller commits or rolls back.
     """
+    start = time.perf_counter()
     events = load_candidate_events(session, facility_id, material_code, period_start, period_end)
     result = reconcile(events, facility_id, material_code, period_start, period_end, tolerance)
 
@@ -127,4 +132,15 @@ def run_reconciliation(
         )
     )
     session.flush()
+    log.info(
+        "reconciliation run",
+        extra={
+            "reconciliation_id": row.reconciliation_id,
+            "facility_id": row.facility_id,
+            "material_code": row.material_code,
+            "status": row.status,
+            "event_count": len(result.links),
+            "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+        },
+    )
     return row

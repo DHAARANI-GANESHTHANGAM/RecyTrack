@@ -5,14 +5,18 @@ Usage:  python -m app.pipeline path/to/file.csv [more.csv ...]
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 
+from app.ingestion.api_records import SIMULATED_SOURCE, records_from_api_items
 from app.ingestion.csv_reader import CsvFormatError, read_csv_bytes
 from app.models import (
     IngestionRun,
     NormalizedEvent,
+    RawRecord,
     RunStatus,
     Severity,
     ValidationIssue,
@@ -23,6 +27,8 @@ from app.normalization.normalize import clean_text, normalize_record
 from app.store import InMemoryRepository, Repository
 from app.validation.rules import status_for, validate_record
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class IngestionResult:
@@ -30,23 +36,44 @@ class IngestionResult:
     events: list[NormalizedEvent] = field(default_factory=list)
 
 
-def run_csv_ingestion(
-    data: bytes, repo: Repository, source_name: str = "csv", file_name: str | None = None
-) -> IngestionResult:
-    """Import one CSV payload. Whole-file problems mark the run FAILED instead of raising."""
+def _start_run(repo: Repository, source_name: str, file_name: str | None, started_at: datetime | None = None) -> IngestionRun:
     run = IngestionRun(source_name=source_name, file_name=file_name)
+    if started_at is not None:
+        run.started_at = started_at
     repo.save_run(run)
-    result = IngestionResult(run=run)
+    log.info("ingestion run started", extra={"run_id": run.run_id, "source_name": source_name})
+    return run
 
-    try:
-        raw_records = read_csv_bytes(data, run.run_id, source_name)
-    except CsvFormatError as exc:
-        run.status = RunStatus.FAILED
-        run.error_summary = str(exc)
-        run.finished_at = utc_now()
-        repo.save_run(run)
-        return result
 
+def _finish_run(repo: Repository, run: IngestionRun, status: RunStatus, error_summary: str | None = None) -> None:
+    run.status = status
+    run.error_summary = error_summary
+    run.finished_at = utc_now()
+    repo.save_run(run)
+    # Counts and ids only: never row values or the error text, which can quote input.
+    log.info(
+        "ingestion run finished",
+        extra={
+            "run_id": run.run_id,
+            "source_name": run.source_name,
+            "status": run.status.value,
+            "received": run.received_count,
+            "accepted": run.accepted_count,
+            "quarantined": run.quarantined_count,
+            "flagged": run.flagged_count,
+            "duplicates": run.duplicate_count,
+            "duration_ms": round((run.finished_at - run.started_at).total_seconds() * 1000),
+        },
+    )
+
+
+def process_raw_records(raw_records: list[RawRecord], run: IngestionRun, repo: Repository) -> list[NormalizedEvent]:
+    """Normalize -> duplicate check -> validate -> store, updating the run's counts.
+
+    Shared by every source. Duplicate keys are (run.source_name, source_record_id).
+    """
+    source_name = run.source_name
+    events: list[NormalizedEvent] = []
     # Hashes already stored per stable key, kept up to date as this run adds events.
     known = repo.find_hashes_for_keys(
         {(source_name, key_id) for r in raw_records if (key_id := clean_text(r.payload.get("source_record_id")))}
@@ -72,7 +99,7 @@ def run_csv_ingestion(
                     )
                 ]
                 run.duplicate_count += 1
-                result.events.append(event)
+                events.append(event)
                 continue
         else:
             known_hashes = set()
@@ -94,7 +121,7 @@ def run_csv_ingestion(
         repo.save_event(event, raw.payload_hash)
         if event.source_record_id:
             known.setdefault((source_name, event.source_record_id), set()).add(raw.payload_hash)
-        result.events.append(event)
+        events.append(event)
 
         if event.validation_status is ValidationStatus.ACCEPTED:
             run.accepted_count += 1
@@ -102,11 +129,57 @@ def run_csv_ingestion(
             run.flagged_count += 1
         else:
             run.quarantined_count += 1
+    return events
 
-    run.status = RunStatus.SUCCEEDED
-    run.finished_at = utc_now()
-    repo.save_run(run)
+
+def run_csv_ingestion(
+    data: bytes, repo: Repository, source_name: str = "csv", file_name: str | None = None
+) -> IngestionResult:
+    """Import one CSV payload. Whole-file problems mark the run FAILED instead of raising."""
+    run = _start_run(repo, source_name, file_name)
+    result = IngestionResult(run=run)
+
+    try:
+        raw_records = read_csv_bytes(data, run.run_id, source_name)
+    except CsvFormatError as exc:
+        _finish_run(repo, run, RunStatus.FAILED, str(exc))
+        return result
+
+    result.events = process_raw_records(raw_records, run, repo)
+    _finish_run(repo, run, RunStatus.SUCCEEDED)
     return result
+
+
+def run_api_ingestion(
+    items: list[dict],
+    repo: Repository,
+    source_name: str = SIMULATED_SOURCE,
+    file_name: str | None = None,
+    started_at: datetime | None = None,
+) -> IngestionResult:
+    """Import items already fetched from an API source, with the same counts and run record as CSV.
+
+    `started_at` lets the run include the time spent fetching.
+    """
+    run = _start_run(repo, source_name, file_name, started_at)
+    result = IngestionResult(run=run)
+    raw_records = records_from_api_items(items, run.run_id, source_name)
+    result.events = process_raw_records(raw_records, run, repo)
+    _finish_run(repo, run, RunStatus.SUCCEEDED)
+    return result
+
+
+def record_failed_run(
+    repo: Repository,
+    error_summary: str,
+    source_name: str = SIMULATED_SOURCE,
+    file_name: str | None = None,
+    started_at: datetime | None = None,
+) -> IngestionRun:
+    """Save a FAILED run for a source that could not be read, so the failure stays visible."""
+    run = _start_run(repo, source_name, file_name, started_at)
+    _finish_run(repo, run, RunStatus.FAILED, error_summary)
+    return run
 
 
 def _print_result(path: str, result: IngestionResult) -> None:

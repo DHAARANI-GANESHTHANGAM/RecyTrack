@@ -7,6 +7,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { FilterBar } from "../components/FilterBar";
 import { Loading } from "../components/Loading";
 import { Pagination } from "../components/Pagination";
+import { RunSummary } from "../components/RunSummary";
 import { StatusBadge } from "../components/StatusBadge";
 import { useApi } from "../hooks/useApi";
 import { useUrlFilters } from "../hooks/useUrlFilters";
@@ -51,6 +52,7 @@ export default function Ingestion() {
                     <Link to={`/records?run_id=${encodeURIComponent(r.run_id)}`}>{r.file_name ?? r.run_id}</Link>
                   ),
                 },
+                { header: "Source", render: (r) => r.source_name },
                 { header: "Started", render: (r) => formatUtc(r.started_at) },
                 { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
                 { header: "Received", render: (r) => r.received_count, className: "num" },
@@ -122,49 +124,5 @@ function UploadForm({ onImported }: { onImported: () => void }) {
       {result ? <RunSummary run={result} title="Import finished" /> : null}
       {failedRun ? <RunSummary run={failedRun} title="Failed run" /> : null}
     </section>
-  );
-}
-
-function RunSummary({ run, title }: { run: Run; title: string }) {
-  return (
-    <div className="run-summary" role="status">
-      <h3>
-        {title}: {run.file_name} <StatusBadge status={run.status} />
-      </h3>
-      <dl className="counts">
-        <div>
-          <dt>Received</dt>
-          <dd>{run.received_count}</dd>
-        </div>
-        <div>
-          <dt>Accepted</dt>
-          <dd>{run.accepted_count}</dd>
-        </div>
-        <div>
-          <dt>Quarantined</dt>
-          <dd>{run.quarantined_count}</dd>
-        </div>
-        <div>
-          <dt>Flagged</dt>
-          <dd>{run.flagged_count}</dd>
-        </div>
-        <div>
-          <dt>Duplicates</dt>
-          <dd>{run.duplicate_count}</dd>
-        </div>
-      </dl>
-      {run.error_summary ? <p className="error-text">{run.error_summary}</p> : null}
-      {run.status === "SUCCEEDED" ? (
-        <p>
-          <Link to={`/records?run_id=${encodeURIComponent(run.run_id)}`}>See this run's records</Link>
-          {run.quarantined_count + run.flagged_count > 0 ? (
-            <>
-              {" · "}
-              <Link to={`/exceptions?run_id=${encodeURIComponent(run.run_id)}`}>See its exceptions</Link>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-    </div>
   );
 }
