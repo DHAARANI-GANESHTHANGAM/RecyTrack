@@ -343,6 +343,7 @@ td.num,
 th.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Long text (e.g. a source health message) wraps inside its cell instead of widening the table. */
