@@ -12,26 +12,34 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.config import MAX_UPLOAD_BYTES
+from app.config import MAX_UPLOAD_BYTES, RECONCILIATION_TOLERANCE
 from app.database.repository import SqlRepository
 from app.database.tables import (
     AuditEventRow,
     IngestionRunRow,
     MaterialEventRow,
     RawRecordRow,
+    ReconciliationEventRow,
+    ReconciliationRow,
     ValidationIssueRow,
 )
 from app.models import RunStatus, utc_now
 from app.pipeline import run_csv_ingestion
+from app.reconciliation.engine import ROLES, describe_formula, describe_tolerance
+from app.reconciliation.service import run_reconciliation
 from app.schemas import (
     AuditOut,
     EventOut,
     ExceptionDetail,
     ExceptionSummary,
     IssueOut,
+    LinkedEventOut,
     Page,
     QualityMetrics,
     RawRecordOut,
+    ReconciliationDetail,
+    ReconciliationIn,
+    ReconciliationOut,
     ReviewIn,
     ReviewOut,
     RunOut,
@@ -345,6 +353,97 @@ def quality_metrics(
         duplicate_rate=rate(duplicates),
         open_exceptions=open_exceptions or 0,
         issues_by_rule={code: count for code, count in issue_rows},
+    )
+
+
+# ---------------------------------------------------------------- reconciliation
+
+
+@router.post("/reconciliations", response_model=ReconciliationDetail, status_code=201)
+def create_reconciliation(body: ReconciliationIn, session: Session = Depends(get_session)):
+    """Run a material-flow balance and save it as a new snapshot (FR-10, FR-11).
+
+    Earlier snapshots are never updated. NEEDS_REVIEW is a review flag, not proof of an error.
+    """
+    tolerance = {
+        "absolute_kg": RECONCILIATION_TOLERANCE["absolute_kg"]
+        if body.absolute_tolerance_kg is None
+        else body.absolute_tolerance_kg,
+        "percent_of_throughput": RECONCILIATION_TOLERANCE["percent_of_throughput"]
+        if body.percent_tolerance is None
+        else body.percent_tolerance,
+    }
+    row = run_reconciliation(
+        session,
+        body.facility_id,
+        body.material_code,
+        body.period_start,
+        body.period_end,
+        tolerance,
+        actor_label=body.actor_label.strip(),
+    )
+    session.commit()
+    session.expire_all()  # answer with the stored values, exactly as GET will return them
+    return _reconciliation_detail(session, row.reconciliation_id)
+
+
+@router.get("/reconciliations", response_model=Page[ReconciliationOut])
+def list_reconciliations(
+    facility_id: str | None = None,
+    material_code: str | None = None,
+    status: str | None = Query(None, description="WITHIN_TOLERANCE, NEEDS_REVIEW or NEEDS_DATA"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    """Reconciliation snapshots, newest first."""
+    r = ReconciliationRow
+    stmt = select(r)
+    if facility_id:
+        stmt = stmt.where(r.facility_id == facility_id.upper())
+    if material_code:
+        stmt = stmt.where(r.material_code == material_code.upper())
+    if status:
+        stmt = stmt.where(r.status == status.upper())
+    stmt = stmt.order_by(r.created_at.desc(), r.reconciliation_id)
+    echo = {k: v for k, v in {"facility_id": facility_id, "material_code": material_code, "status": status}.items() if v}
+    return _paginate(session, stmt, page, page_size, echo, ReconciliationOut)
+
+
+@router.get("/reconciliations/{reconciliation_id}", response_model=ReconciliationDetail)
+def get_reconciliation(reconciliation_id: str, session: Session = Depends(get_session)):
+    """Inputs, formula, tolerance, status, reasons and every linked event by role (FR-15)."""
+    return _reconciliation_detail(session, reconciliation_id)
+
+
+def _reconciliation_detail(session: Session, reconciliation_id: str) -> ReconciliationDetail:
+    row = session.scalar(
+        select(ReconciliationRow)
+        .where(ReconciliationRow.reconciliation_id == reconciliation_id)
+        .options(selectinload(ReconciliationRow.events).selectinload(ReconciliationEventRow.event))
+    )
+    if row is None:
+        raise HTTPException(404, f"No reconciliation with id {reconciliation_id}.")
+    grouped: dict[str, list[LinkedEventOut]] = {role: [] for role in ROLES}
+    links = sorted(row.events, key=lambda link: (link.event.event_timestamp, link.event_id))
+    for link in links:
+        e = link.event
+        grouped[link.role].append(
+            LinkedEventOut(
+                event_id=e.event_id,
+                source_record_id=e.source_record_id,
+                event_type=e.event_type,
+                quantity_kg=e.quantity_kg,
+                event_timestamp=e.event_timestamp,
+                validation_status=e.validation_status,
+                excluded_reason=link.excluded_reason,
+            )
+        )
+    return ReconciliationDetail(
+        **ReconciliationOut.model_validate(row).model_dump(),
+        formula=describe_formula(row),
+        tolerance_explanation=describe_tolerance(row),
+        events=grouped,
     )
 
 
